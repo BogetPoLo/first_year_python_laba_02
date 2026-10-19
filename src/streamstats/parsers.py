@@ -1,59 +1,89 @@
 import csv
 import json
 import os
-from collections.abc import Generator, Sequence
-from errors import HeaderFieldError, EmptyFieldError
+
+from collections.abc import Generator, Sequence, Callable
+from errors import HeaderFieldError, EmptyFieldError, FormatFieldError
+from src.streamstats.models import LineLogs
 
 
-def parsers_file_csv(name_file: str) -> Generator[tuple[str, str, str, str], None, None]:
+def check_headlines(headlines: Sequence[str] | None) -> bool:
+    """Проверяет заголовки файла
+    Args:
+        t, l, s, m - заголовки
+    Returns:
+        True - заголовки соответствуют
+        False - в остальных случаях
+    """
+    match headlines:
+        case ["timestamp", "level", "source", "message"]:
+            return True
+        case _:
+            return False
+
+
+def parsers_file_csv(name_file: str) -> Generator[LineLogs, None, None]:
     """
     Функция парсит файл типа csv
     Args:
         name_file - имя файла, примеры: test.csv, test.json
     Returns:
         None
+    Raises:
+        HeaderFieldError - заголовки отсутствуют или написаны не правильно
     """
     with open(name_file, mode="r", encoding="utf8") as rfile:
-        timestamp: str
-        level: str
-        source: str
-        message: str
+        t: str; l: str; s: str; m: str
 
         reader: csv.DictReader[str] = csv.DictReader(rfile)
         headlines: Sequence[str] | None = reader.fieldnames
 
-        if headlines == []:  # Ошибка выпадает, кода нет заголовка
-            raise HeaderFieldError()
-
-        timestamp, level, source, message = headlines
+        if not check_headlines(headlines):
+            raise HeaderFieldError
+        t, l, s, m = headlines
 
         for line in reader:
-            yield (line[timestamp], line[level], line[source], line[message])
+            yield LineLogs(
+                timestamp=line[t],
+                level=line[l],
+                source=line[s],
+                message=line[m]
+            )
 
-def parser_file_jsonl(name_file: str) -> Generator[tuple[str, str, str, str], None, None]:
+
+def parser_file_jsonl(name_file: str) -> Generator[LineLogs, None, None]:
     """
     Функция парсит файл типа json
     Args:
         name_file - имя файла, примеры: test.csv, test.json
     Returns:
         None
+    Raises:
+        HeaderFieldError - заголовки отсутствуют или написаны не правильно
     """
-
     with open(name_file, mode="r", encoding="utf8") as rfile:
-        timestamp: str
-        level: str
-        source: str
-        message: str
+        t: str; l: str; s: str; m: str
 
         for line in rfile:
             if not line.strip():
                 continue
-            row = json.loads(line)
-            timestamp, level, source, message = row.keys()
-            yield (row[timestamp], row[level], row[source], row[message])
+            line: dict[str, str] = json.loads(line)
+
+            headlines: Sequence[str] | None = list(line.keys())
+
+            if not check_headlines(headlines):
+                raise HeaderFieldError
+            t, l, s, m = headlines
+
+            yield LineLogs(
+                timestamp=line[t],
+                level=line[l],
+                source=line[s],
+                message=line[m]
+            )
 
 
-def entry_point_for_file_parsers(name_file: str, format: str):
+def entry_point_for_file_parsers(name_file: str, format: str) -> Generator[LineLogs, None, None]:
     """
     Входная точка для парсинга файла
     Args:
@@ -61,23 +91,21 @@ def entry_point_for_file_parsers(name_file: str, format: str):
         format - вводимый формат файла, пример: csv, json
     Returns:
         None
+    Raises:
+        EmptyFieldError - файл пустой
+        FormatFieldError - неправильный формат
     """
     if os.stat(name_file).st_size == 0:  # Ошибка выпадает если файл пустой
         raise EmptyFieldError
 
-    def_func = {
+    def_func: dict[str, Callable[[str], Generator[LineLogs, None, None]]] = {
         "csv": parsers_file_csv,
         "jsonl": parser_file_jsonl
     }
 
-    my_generator = def_func[format](name_file)
+    if format not in def_func:  # Ошибка выпадает если неправильный формат файла
+        raise FormatFieldError()
+
+    my_generator: Generator[LineLogs, None, None] = def_func[format](name_file)
 
     yield from my_generator
-
-
-# # !! для тестов !!
-# for name in (("logs.csv", "csv"), ("logs.jsonl", "jsonl")):
-#     my_generator = entry_point_for_file_parsers(*name)
-#     for i in my_generator:
-#         print(i)
-#     print("----------------------------")
