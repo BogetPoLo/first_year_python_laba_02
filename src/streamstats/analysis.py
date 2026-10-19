@@ -1,57 +1,41 @@
 from collections.abc import Generator
-
+from pprint import pprint
 from src.streamstats.parsers import entry_point_for_file_parsers
 from src.streamstats.models import ResultStatistic, CounterSource, LineLogs
 
 
-def sorted_top_five_error(
-        d_name: str, d_value: int, top_five_source: list | list[tuple[str, int]]
-        ) -> list | list[tuple[str, int]]:
-    """Сортирует 5 ошибок по критерию CRITICAL/ERROR
+def sorted_top_five_error(result_statistic: ResultStatistic) -> dict[int, tuple[int, int, str]]:
+    """Сортирует ошибки типа ERROR/CRITICAL в порядке убывания
     Args:
-        d_name - источник для сортировки
-        d_value - количество ошибок источника
-        top_five_source - список со всеми ошибками, отсортированный
+        result_statistic - объект dataclass
     Returns:
-        top_five_source - список со всеми ошибками, отсортированный
-        """
-    t_name: str; t_error: int
+        Возвращает 5 или меньше строк с самыми часто встречающимися источниками,
+        которые получали ошибку ERROR/CRITICAL"""
+    top_five_source_list: list | list[tuple[str, int, int]] = []
 
-    if d_value != 0:
-        for i, tuple_value in enumerate(top_five_source):
-            t_name, t_error = tuple_value
-            if t_error < d_value:  # Проверяет какой источник чаще встречался, если d_name,
-                                   # тогда он встает на место t_name
-                top_five_source.insert(i, (d_name, d_value))
-                return top_five_source
-            elif t_error == d_value:  # Если два источника встречались два раза подряд,
-                                      # тогда они, сравниваюсь по имени:
-                if t_name > d_name:
-                    top_five_source.insert(i, (d_name, d_value))
-                    return top_five_source
-                else:
-                    top_five_source.insert(i + 1, (d_name, d_value))
-                    return top_five_source
-    return top_five_source
+    # Приводит словарь к типу [(источник, сколько раз встречался, тип ошибки 0 - ERROR, 1 - CRITICAL)]
+    for key, value in result_statistic.counter_source.items():
+        if value.error != 0:
+            top_five_source_list.append((key, value.error, 0))
+        if value.critical != 0:
+            top_five_source_list.append((key, value.critical, 1))
+    # Сортируем через lambda
+    top_five_source = sorted(top_five_source_list, key=lambda x: (-x[1], -x[2], x[0]))[0:5]
+
+    # Приводит к более удобному виду для записи и чтения в словаре,
+    # а так же заменяем 0 на ERROR b 1 на CRITICAL
+    top_five_source_dict: dict | dict[int, tuple[int, int, str]] = {}
+    for i, value in enumerate(top_five_source):
+        match value[-1]:
+            case 0:
+                value = (value[0], value[1], "ERROR")
+            case 1:
+                value = (value[0], value[1], "CRITICAL")
+        top_five_source_dict[i] = value
+    return top_five_source_dict
 
 
-def entry_point_for_file_analysis(name_file: str):
-    """Входная точка для анализа файла
-    Args:
-        name_file - имя файла, примеры: test.csv, test.json
-    Returns:
-
-    """
-    name: str; format: str
-
-    result_statistic: ResultStatistic = ResultStatistic(counter_source={},top_five_source=[])  # Создаем объект класса ResultStatistic
-
-    name, format = name_file.split(".")
-    my_generator: Generator[LineLogs, None, None] = entry_point_for_file_parsers(name_file, format)
-
-    # Записываю имя файла в итоговую статистику
-    result_statistic.name = name
-
+def sorted_data(result_statistic: ResultStatistic, my_generator: Generator[LineLogs, None, None]) -> None:
     for line in my_generator:
         time: str = line.timestamp  # лог время
         level: str = line.level  # лог левел
@@ -63,7 +47,7 @@ def entry_point_for_file_analysis(name_file: str):
         result_statistic.end_time = time
 
         # Записывает все level в итоговую статистику
-        result_statistic.all_event += 1
+        result_statistic.all_level += 1
 
         # Записывает новый source, если такого нет
         if source not in result_statistic.counter_source:
@@ -89,19 +73,21 @@ def entry_point_for_file_analysis(name_file: str):
                 result_statistic.critical += 1
                 counter_source.critical += 1
 
-    top_five_source: list | list[tuple[str, int]] = []  # [(name, critical/error)]
-    for key, value in result_statistic.counter_source.items():
-        if len(top_five_source) == 0:
-            if value.critical != 0:
-                top_five_source.append((key, value.critical))
-            if value.error != 0:
-                if value.error > value.critical:
-                    top_five_source.insert(0, (key, value.error))
-                else:
-                    top_five_source.append((key, value.error))
-            continue
 
-        top_five_source = sorted_top_five_error(key, value.critical, top_five_source)
-        top_five_source = sorted_top_five_error(key, value.error, top_five_source)
+def entry_point_for_file_analysis(name_file: str, name: str, formatt: str) -> ResultStatistic:
+    """Входная точка для анализа файла
+    Args:
+        name_file - имя файла, примеры: test.csv, test.json
+    Returns:
+        result_statistic - объект dataclass
+    """
+    result_statistic: ResultStatistic = ResultStatistic(counter_source={}, top_five_source={})  # Создаем объект класса ResultStatistic
+    my_generator: Generator[LineLogs, None, None] = entry_point_for_file_parsers(name_file, formatt)
 
-    result_statistic.top_five_source = top_five_source
+    # Вызов функции для сортировки данных
+    sorted_data(result_statistic, my_generator)
+
+    # Вызов функции для сортировки
+    result_statistic.top_five_source = sorted_top_five_error(result_statistic)
+
+    return result_statistic
