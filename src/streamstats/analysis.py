@@ -1,5 +1,4 @@
 from collections.abc import Generator
-from pprint import pprint
 from src.streamstats.parsers import entry_point_for_file_parsers
 from src.streamstats.models import ResultStatistic, CounterSource, LineLogs
 
@@ -36,6 +35,12 @@ def sorted_top_five_error(result_statistic: ResultStatistic) -> dict[int, tuple[
 
 
 def sorted_data(result_statistic: ResultStatistic, my_generator: Generator[LineLogs, None, None]) -> None:
+    """Сортирует данные для dataclass
+    Args:
+        result_statistic - объект dataclass
+        my_generator - генераторная функция
+    Returns:
+        None"""
     for line in my_generator:
         time: str = line.timestamp  # лог время
         level: str = line.level  # лог левел
