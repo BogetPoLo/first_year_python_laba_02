@@ -83,12 +83,12 @@ def parser_file_jsonl(name_file: str) -> Generator[LineLogs, None, None]:
             )
 
 
-def entry_point_for_file_parsers(name_file: str, format: str) -> Generator[LineLogs, None, None]:
+def entry_point_for_file_parsers(name_file: str, formatt: str) -> Generator[LineLogs, None, None]:
     """
     Входная точка для парсинга файла
     Args:
         name_file - имя файла, примеры: test.csv, test.json
-        format - вводимый формат файла, пример: csv, json
+        formatt - вводимый формат файла, пример: csv, json
     Returns:
         None
     Raises:
@@ -103,9 +103,9 @@ def entry_point_for_file_parsers(name_file: str, format: str) -> Generator[LineL
         "jsonl": parser_file_jsonl
     }
 
-    if format not in def_func:  # Ошибка выпадает если неправильный формат файла
+    if formatt not in def_func:  # Ошибка выпадает если неправильный формат файла
         raise FormatFieldError()
 
-    my_generator: Generator[LineLogs, None, None] = def_func[format](name_file)
+    my_generator: Generator[LineLogs, None, None] = def_func[formatt](name_file)
 
     yield from my_generator
