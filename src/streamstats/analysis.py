@@ -1,6 +1,7 @@
+from datetime import datetime, timezone
 from collections.abc import Generator
-from src.streamstats.parsers import entry_point_for_file_parsers
-from src.streamstats.models import ResultStatistic, CounterSource, LineLogs
+
+from streamstats.models import ResultStatistic, CounterSource, LineLogs
 
 
 def sorted_top_five_error(result_statistic: ResultStatistic) -> dict[int, tuple[int, int, str]]:
@@ -19,7 +20,7 @@ def sorted_top_five_error(result_statistic: ResultStatistic) -> dict[int, tuple[
         if value.critical != 0:
             top_five_source_list.append((key, value.critical, 1))
     # Сортируем через lambda
-    top_five_source = sorted(top_five_source_list, key=lambda x: (-x[1], -x[2], x[0]))[0:5]
+    top_five_source: list[type[str, int, int]] = sorted(top_five_source_list, key=lambda x: (-x[1], -x[2], x[0]))[0:5]
 
     # Приводит к более удобному виду для записи и чтения в словаре,
     # а так же заменяем 0 на ERROR b 1 на CRITICAL
@@ -42,21 +43,32 @@ def sorted_data(result_statistic: ResultStatistic, my_generator: Generator[LineL
     Returns:
         None"""
     for line in my_generator:
-        time: str = line.timestamp  # лог время
+        if not line:
+            result_statistic.skip_lines += 1
+            continue
+        elif line is None:
+            break
+        time: datetime = line.timestamp  # лог время
         level: str = line.level  # лог левел
         source: str = line.source  # лог источник
+        mess: str = line.message  # лог сообщение
 
         # Записывает временные точки в итоговую статистику
         if result_statistic.start_time is None:
             result_statistic.start_time = time
-        result_statistic.end_time = time
+            result_statistic.end_time = time
+        else:
+            if time < result_statistic.start_time:
+                result_statistic.start_time = time
+            if time > result_statistic.end_time:
+                result_statistic.end_time = time
 
         # Записывает все level в итоговую статистику
         result_statistic.all_level += 1
 
         # Записывает новый source, если такого нет
         if source not in result_statistic.counter_source:
-            result_statistic.counter_source[source] = CounterSource()
+            result_statistic.counter_source[source] = CounterSource(timestamp=[], message=[])
 
         # Записывает сколько каждый level встречался в логах,
         # а так же сколько раз встречался level для каждого source
@@ -78,21 +90,30 @@ def sorted_data(result_statistic: ResultStatistic, my_generator: Generator[LineL
                 result_statistic.critical += 1
                 counter_source.critical += 1
 
+        # Добавляем время в общую статистику
+        counter_source.timestamp.append(time.isoformat())
+        # Добавляем соо в общую статистику
+        counter_source.message.append(mess)
 
-def entry_point_for_file_analysis(name_file: str, name: str, formatt: str) -> ResultStatistic:
+
+def entry_point_for_file_analysis(
+        result_statistic: ResultStatistic,
+        my_generator: Generator[LineLogs, None, None]
+    ) -> ResultStatistic:
     """Входная точка для анализа файла
     Args:
         name_file - имя файла, примеры: test.csv, test.json
     Returns:
         result_statistic - объект dataclass
     """
-    result_statistic: ResultStatistic = ResultStatistic(counter_source={}, top_five_source={})  # Создаем объект класса ResultStatistic
-    my_generator: Generator[LineLogs, None, None] = entry_point_for_file_parsers(name_file, formatt)
 
     # Вызов функции для сортировки данных
     sorted_data(result_statistic, my_generator)
 
-    # Вызов функции для сортировки
+    result_statistic.start_time = result_statistic.start_time.isoformat()
+    result_statistic.end_time = result_statistic.end_time.isoformat()
+
+    # Вызов функции для сортировки top-5 элементов
     result_statistic.top_five_source = sorted_top_five_error(result_statistic)
 
     return result_statistic

@@ -1,30 +1,68 @@
-from src.streamstats.analysis import entry_point_for_file_analysis
-from src.streamstats.models import ResultStatistic
-from dataclasses import asdict
-from typing import Any
 from pathlib import Path
-from json import dump
+from dataclasses import asdict
+import json
+
+from streamstats.models import ResultStatistic
 
 
-def write_files(name_file):
-    name: str; formatt: str
-    name, formatt = name_file.split(".")
-
-    result_statistic: ResultStatistic = entry_point_for_file_analysis(name_file, name, formatt)
-    name_statistics: str = f"{name}_statistics.json"
-
-    count_file: int = 0
-    file_path: Path = Path(name_statistics)
-    if file_path.exists() or file_path.is_file():
-        while file_path.exists() or file_path.is_file():
-            name_statistics = f"{name}_statistics_{count_file}.json"
-            file_path = Path(name_statistics)
-            count_file += 1
-
-    # Записывает файл со статистикой, только по этому файлу
-    with open(name_statistics, mode="w", encoding="utf8") as wfile:
-        result_dict: dict[str, Any] = asdict(result_statistic)
-        dump(result_dict, wfile, indent=4, ensure_ascii=False)
+def make_name_file(pref_f: str, count_f: int, name_f: str, type_f: str) -> Path:
+    """Формирует имя файла
+    Args:
+        pref_f - какой тип файла.
+            all_statistic_files - статистика со всех файлов
+            statistic_file - статистика с одного файла
+        count_f - если имен повторяются
+        name_f - имя файла
+        type_f - тип фала
+    Returns:
+        Path
+            """
+    while True:
+        name_file: Path = Path(f"{pref_f}_{count_f}_{name_f}{type_f}")
+        if not name_file.is_file():
+            return name_file
+        count_f += 1
 
 
-write_files("logs.jsonl")
+def write_json_file(name: Path, obj_d: list[dict] | dict) -> None:
+    """Записывает файл
+    Args:
+        name - имя
+        obj_d - данные, которые нужно записать
+    Returns:
+        None"""
+    with open(name, mode="w", encoding="utf8") as j_wfile:
+        json.dump(
+            obj_d,
+            j_wfile,
+            ensure_ascii=False,
+            indent=4
+        )
+
+
+def start_make_files(all_object: list[ResultStatistic], output_f: str) -> None:
+    """Входная точка для записи файлов
+    Args:
+        all_object - все объекты с данными
+        output_f - имя файла
+    Returns:
+        None"""
+    file_path: Path = Path(output_f)
+    name_f: str = file_path.stem if file_path.stem else "report"
+
+    all_statistic_files_json: Path = make_name_file(
+        "all_statistic_files",
+        0,
+        name_f,
+        ".json")
+
+    write_json_file(all_statistic_files_json, [asdict(ob) for ob in all_object])
+
+    for ob in all_object:
+        statistic_file = make_name_file(
+            "statistic_file",
+            0,
+            name_f,
+            ".json"
+        )
+        write_json_file(statistic_file, asdict(ob))
